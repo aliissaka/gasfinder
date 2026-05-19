@@ -1,0 +1,25 @@
+name: admin-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "admin/**"
+      - ".github/workflows/admin-ci.yml"
+  pull_request:
+    paths:
+      - "admin/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - run: dotnet restore
+      - run: dotnet build --no-restore --configuration Release

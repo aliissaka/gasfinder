@@ -1,0 +1,77 @@
+# ===== .NET =====
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+*.swp
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+*.pem
+secrets.json
+
+# ===== Flutter / Dart =====
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+.idea/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.fvm/
+pubspec.lock
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/release/
+android/app/debug/
+android/app/profile/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/gradle/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/App.framework/
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/Flutter/flutter_export_environment.sh
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+
+# ===== Node (for OpenAPI codegen tools) =====
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Logs / Temp =====
+*.log
+*.tmp
+*.bak
+coverage/
+TestResults/
+
+# ===== Secrets / Env =====
+.env
+.env.*
+!.env.example
+JWT_KEY_FOR_RENDER.txt

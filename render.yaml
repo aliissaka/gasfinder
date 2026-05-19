@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: gasfinder-api
+    runtime: docker
+    region: frankfurt
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      # Secrets: set these manually in the Render dashboard.
+      - key: ConnectionStrings__Default
+        sync: false
+      - key: Jwt__SigningKey
+        sync: false
