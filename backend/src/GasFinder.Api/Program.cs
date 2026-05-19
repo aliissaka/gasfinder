@@ -1,6 +1,5 @@
 using System.Text;
 using System.Threading.RateLimiting;
-using GasFinder.Api.Middleware;
 using GasFinder.Infrastructure;
 using GasFinder.Infrastructure.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -67,7 +66,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseResponseCompression();
-app.UseMiddleware<AppVersionGate>();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -78,3 +76,4 @@ app.MapControllers();
 app.Run();
 
 public partial class Program;
+
