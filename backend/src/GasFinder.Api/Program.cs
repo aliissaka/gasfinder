@@ -6,6 +6,7 @@ using GasFinder.Infrastructure;
 using GasFinder.Infrastructure.Auth;
 using GasFinder.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// Trust X-Forwarded-* headers from upstream load balancers (Render, Koyeb,
+// Cloud Run, etc.) so Request.IsHttps and RemoteIpAddress reflect the real
+// client, not the proxy.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 builder.Services.AddCors();
 
 builder.Services.AddRateLimiter(o =>
@@ -65,6 +76,8 @@ builder.Services.AddRateLimiter(o =>
 });
 
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
