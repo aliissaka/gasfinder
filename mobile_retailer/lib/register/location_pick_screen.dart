@@ -16,7 +16,7 @@ class LocationPickScreen extends StatefulWidget {
 }
 
 class _LocationPickScreenState extends State<LocationPickScreen> {
-  static const LatLng _defaultFallback = LatLng(14.7167, -17.4677); // Dakar
+  static const LatLng _defaultFallback = LatLng(13.5128, 2.1128); // Niamey
 
   final MapController _mapController = MapController();
   LatLng? _center;

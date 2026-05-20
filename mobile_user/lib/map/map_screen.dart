@@ -31,7 +31,7 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  static const _defaultCenter = LatLng(14.7167, -17.4677); // Dakar fallback
+  static const _defaultCenter = LatLng(13.5128, 2.1128); // Niamey fallback
 
   final MapController _mapController = MapController();
   final Set<String> _selectedBrandIds = {};
@@ -153,6 +153,14 @@ class _MapScreenState extends State<MapScreen> {
         .toList();
   }
 
+  bool _shouldShowEmptyBanner(List<RetailerListItem> filtered) {
+    // Only after a successful sync has completed (lastSyncAt != null) so we
+    // don't flash the empty banner during the initial load.
+    if (widget.syncEngine.isSyncing) return false;
+    if (widget.store.lastSyncAt == null) return false;
+    return filtered.isEmpty;
+  }
+
   Color _pinColor(RetailerListItem r) {
     if (_selectedBrandIds.isEmpty) {
       return r.availableBrandIds.isEmpty ? GasColors.out : GasColors.available;
@@ -216,6 +224,11 @@ class _MapScreenState extends State<MapScreen> {
                   error: widget.syncEngine.lastError,
                   lastSyncAt: widget.store.lastSyncAt,
                 ),
+                if (_shouldShowEmptyBanner(retailers))
+                  _EmptyResultsBanner(
+                    filtered: _selectedBrandIds.isNotEmpty,
+                    onClearFilters: _clearFilters,
+                  ),
               ],
             ),
           ),
@@ -309,6 +322,65 @@ class _SyncStatusStrip extends StatelessWidget {
     if (delta.inMinutes < 60) return 'Hors ligne — données il y a ${delta.inMinutes} min';
     if (delta.inHours < 24) return 'Hors ligne — données il y a ${delta.inHours} h';
     return 'Hors ligne — données il y a ${delta.inDays} j';
+  }
+}
+
+class _EmptyResultsBanner extends StatelessWidget {
+  const _EmptyResultsBanner({
+    required this.filtered,
+    required this.onClearFilters,
+  });
+
+  final bool filtered;
+  final VoidCallback onClearFilters;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: GasColors.card,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(blurRadius: 8, color: Colors.black26, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: GasColors.primary, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  filtered
+                      ? 'Aucun revendeur ne correspond aux filtres'
+                      : 'Aucun revendeur dans cette zone',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  filtered
+                      ? 'Essayez d\'effacer les filtres ou de déplacer la carte.'
+                      : 'Déplacez la carte et appuyez sur « Chercher ici ».',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.black.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (filtered)
+            TextButton(
+              onPressed: onClearFilters,
+              child: const Text('Effacer'),
+            ),
+        ],
+      ),
+    );
   }
 }
 

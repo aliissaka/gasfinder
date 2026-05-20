@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.CALL_PHONE"/>
     <application
-        android:label="mobile_user"
+        android:label="GasFinder"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

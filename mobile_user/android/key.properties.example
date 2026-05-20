@@ -1,0 +1,8 @@
+# Copy this file to key.properties and fill in your real keystore values.
+# key.properties and *.jks are gitignored. Back up your keystore + passwords
+# somewhere safe (password manager) — losing them means you cannot publish
+# updates to your existing Play Store listing.
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=gasfinder
+storeFile=gasfinder-release.jks

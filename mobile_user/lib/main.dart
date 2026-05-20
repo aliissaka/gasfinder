@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'cache/cached_store.dart';
 import 'cache/sync_engine.dart';
 import 'map/map_screen.dart';
+import 'onboarding/onboarding_screen.dart';
 import 'version_check.dart';
 
 const String kApiBaseUrl = String.fromEnvironment(
@@ -67,7 +68,7 @@ Future<void> main() async {
   ));
 }
 
-class GasFinderUserApp extends StatelessWidget {
+class GasFinderUserApp extends StatefulWidget {
   const GasFinderUserApp({
     super.key,
     required this.upgradePolicy,
@@ -82,6 +83,19 @@ class GasFinderUserApp extends StatelessWidget {
   final SyncEngine syncEngine;
 
   @override
+  State<GasFinderUserApp> createState() => _GasFinderUserAppState();
+}
+
+class _GasFinderUserAppState extends State<GasFinderUserApp> {
+  Future<bool>? _onboardingSeen;
+
+  @override
+  void initState() {
+    super.initState();
+    _onboardingSeen = OnboardingScreen.hasSeen();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Gas Finder',
@@ -91,7 +105,7 @@ class GasFinderUserApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: ValueListenableBuilder<AppVersionResponse?>(
-        valueListenable: upgradePolicy,
+        valueListenable: widget.upgradePolicy,
         builder: (_, policy, __) {
           if (policy != null) {
             return UpgradeRequiredScreen(
@@ -106,10 +120,27 @@ class GasFinderUserApp extends StatelessWidget {
               },
             );
           }
-          return MapScreen(
-            retailersApi: retailersApi,
-            store: store,
-            syncEngine: syncEngine,
+          return FutureBuilder<bool>(
+            future: _onboardingSeen,
+            builder: (_, snapshot) {
+              if (!snapshot.hasData) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (!snapshot.data!) {
+                return OnboardingScreen(
+                  onDone: () => setState(() {
+                    _onboardingSeen = Future.value(true);
+                  }),
+                );
+              }
+              return MapScreen(
+                retailersApi: widget.retailersApi,
+                store: widget.store,
+                syncEngine: widget.syncEngine,
+              );
+            },
           );
         },
       ),
