@@ -1,0 +1,33 @@
+@namespace GasFinder.Admin.Components
+
+<div class="col-md-4 col-lg-3">
+    @if (!string.IsNullOrEmpty(Href))
+    {
+        <a href="@Href" class="text-decoration-none">
+            @RenderCard()
+        </a>
+    }
+    else
+    {
+        @RenderCard()
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public int Count { get; set; }
+    [Parameter] public string Variant { get; set; } = "primary";
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public bool Highlight { get; set; }
+
+    private RenderFragment RenderCard() => __builder =>
+    {
+        var borderClass = Highlight ? $"border-{Variant} border-2" : "";
+        <div class="card shadow-sm h-100 @borderClass">
+            <div class="card-body">
+                <div class="text-uppercase small text-muted mb-1">@Label</div>
+                <div class="display-6 text-@Variant fw-bold mb-0">@Count</div>
+            </div>
+        </div>
+    };
+}

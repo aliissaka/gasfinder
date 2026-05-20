@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<StockItem> StockItems => Set<StockItem>();
     public DbSet<StockUpdate> StockUpdates => Set<StockUpdate>();
+    public DbSet<RetailerStatusChange> RetailerStatusChanges => Set<RetailerStatusChange>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

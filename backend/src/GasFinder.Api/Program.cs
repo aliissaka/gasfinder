@@ -1,10 +1,14 @@
 using System.Text;
 using System.Threading.RateLimiting;
+using GasFinder.Domain.Entities;
+using GasFinder.Domain.Enums;
 using GasFinder.Infrastructure;
 using GasFinder.Infrastructure.Auth;
+using GasFinder.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,6 +46,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddCors();
+
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -63,6 +69,8 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+    await SeedDevAdminAsync(app);
 }
 
 app.UseResponseCompression();
@@ -74,6 +82,33 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 
 app.Run();
+
+static async Task SeedDevAdminAsync(WebApplication app)
+{
+    var phone = app.Configuration["DevSeed:AdminPhone"];
+    var pin = app.Configuration["DevSeed:AdminPin"];
+    if (string.IsNullOrWhiteSpace(phone) || string.IsNullOrWhiteSpace(pin)) return;
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var hasher = scope.ServiceProvider.GetRequiredService<IPinHasher>();
+
+    if (await db.Users.AnyAsync(u => u.Phone == phone)) return;
+
+    var now = DateTimeOffset.UtcNow;
+    db.Users.Add(new User
+    {
+        Id = Guid.NewGuid(),
+        Phone = phone,
+        PinHash = hasher.Hash(pin),
+        Role = UserRole.Admin,
+        DisplayName = "Dev Admin",
+        CreatedAt = now,
+        UpdatedAt = now
+    });
+    await db.SaveChangesAsync();
+    app.Logger.LogInformation("Seeded dev admin {Phone}", phone);
+}
 
 public partial class Program;
 

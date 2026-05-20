@@ -1,0 +1,318 @@
+@page "/brands"
+@using GasFinder.Admin.Services
+@using GasFinder.Shared.Contracts.Brands
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminApi Api
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IDisposable
+
+<PageTitle>Brand catalog</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Brands</h1>
+    <div>
+        <button class="btn btn-outline-secondary me-2" @onclick="LoadAsync" disabled="@_loading">
+            @(_loading ? "Loading..." : "Refresh")
+        </button>
+        <button class="btn btn-primary" @onclick="OpenCreate">Add brand</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+@if (_loading && Rows is null)
+{
+    <p>Loading brands...</p>
+}
+else if (Rows is null || Rows.Count == 0)
+{
+    <p class="text-muted">No brands yet. Click "Add brand" to create the first one.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th style="width: 64px;">Logo</th>
+                    <th>Name</th>
+                    <th style="width: 140px;">Display order</th>
+                    <th>Updated</th>
+                    <th class="text-end" style="width: 200px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var b in Rows)
+                {
+                    <tr>
+                        <td>
+                            @if (!string.IsNullOrEmpty(b.LogoUrl))
+                            {
+                                <img src="@b.LogoUrl" alt="@b.Name" style="height: 32px; max-width: 56px; object-fit: contain;" />
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+                        <td><strong>@b.Name</strong></td>
+                        <td>@b.DisplayOrder</td>
+                        <td>@b.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-primary me-1"
+                                    @onclick="() => OpenEdit(b)"
+                                    disabled="@(_pendingId == b.Id)">
+                                Edit
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => OpenDelete(b)"
+                                    disabled="@(_pendingId == b.Id)">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_editing is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.4);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_editingId is null ? "Add brand" : "Edit brand")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseEdit"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(_editError))
+                    {
+                        <div class="alert alert-danger py-2">@_editError</div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input class="form-control" @bind="_editing.Name" placeholder="e.g. Oryx Gas" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Logo URL</label>
+                        <input class="form-control" @bind="_editing.LogoUrl" placeholder="https://..." />
+                        @if (!string.IsNullOrWhiteSpace(_editing.LogoUrl))
+                        {
+                            <div class="mt-2">
+                                <img src="@_editing.LogoUrl" alt="logo preview"
+                                     style="height: 48px; max-width: 120px; object-fit: contain;" />
+                            </div>
+                        }
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Display order</label>
+                        <input type="number" class="form-control" @bind="_editing.DisplayOrder" />
+                        <div class="form-text">Lower numbers sort first in the user app.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseEdit" disabled="@_saving">Cancel</button>
+                    <button class="btn btn-primary" @onclick="Save" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Save")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_deleting is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.4);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete brand</h5>
+                    <button type="button" class="btn-close" @onclick="CloseDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Delete <strong>@_deleting.Name</strong>?</p>
+                    <p class="text-muted small mb-0">
+                        The API will refuse if any retailer stock item references this brand.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseDelete" disabled="@_saving">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmDelete" disabled="@_saving">
+                        @(_saving ? "Deleting..." : "Delete")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private sealed class EditModel
+    {
+        public string Name { get; set; } = "";
+        public string LogoUrl { get; set; } = "";
+        public int DisplayOrder { get; set; }
+    }
+
+    private List<BrandDto>? Rows;
+    private string? Error;
+    private bool _loading;
+    private bool _hydrated;
+    private Guid? _pendingId;
+
+    private EditModel? _editing;
+    private Guid? _editingId;
+    private string? _editError;
+    private bool _saving;
+
+    private BrandDto? _deleting;
+
+    protected override void OnInitialized()
+    {
+        Tokens.Changed += OnTokensChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hydrated) return;
+        _hydrated = true;
+
+        await Tokens.HydrateFromAsync(Storage);
+        if (!Tokens.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Tokens.Changed -= OnTokensChanged;
+
+    private void OnTokensChanged()
+    {
+        if (!Tokens.IsAuthenticated)
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task LoadAsync()
+    {
+        Error = null;
+        _loading = true;
+        try
+        {
+            Rows = (await Api.ListBrandsAsync()).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Failed to load: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenCreate()
+    {
+        _editing = new EditModel { DisplayOrder = (Rows?.Count ?? 0) + 1 };
+        _editingId = null;
+        _editError = null;
+    }
+
+    private void OpenEdit(BrandDto b)
+    {
+        _editing = new EditModel { Name = b.Name, LogoUrl = b.LogoUrl, DisplayOrder = b.DisplayOrder };
+        _editingId = b.Id;
+        _editError = null;
+    }
+
+    private void CloseEdit()
+    {
+        _editing = null;
+        _editingId = null;
+        _editError = null;
+    }
+
+    private async Task Save()
+    {
+        if (_editing is null) return;
+        if (string.IsNullOrWhiteSpace(_editing.Name) || string.IsNullOrWhiteSpace(_editing.LogoUrl))
+        {
+            _editError = "Name and logo URL are required.";
+            return;
+        }
+
+        _saving = true;
+        _editError = null;
+        try
+        {
+            var result = _editingId is null
+                ? await Api.CreateBrandAsync(_editing.Name.Trim(), _editing.LogoUrl.Trim(), _editing.DisplayOrder)
+                : await Api.UpdateBrandAsync(_editingId.Value, _editing.Name.Trim(), _editing.LogoUrl.Trim(), _editing.DisplayOrder);
+
+            if (!result.Success)
+            {
+                _editError = result.Error;
+                return;
+            }
+            CloseEdit();
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _editError = $"Network error: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OpenDelete(BrandDto b)
+    {
+        _deleting = b;
+    }
+
+    private void CloseDelete()
+    {
+        _deleting = null;
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (_deleting is null) return;
+        var id = _deleting.Id;
+        _saving = true;
+        _pendingId = id;
+        try
+        {
+            var result = await Api.DeleteBrandAsync(id);
+            if (!result.Success)
+            {
+                Error = result.Error;
+                return;
+            }
+            _deleting = null;
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Network error: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+            _pendingId = null;
+        }
+    }
+}

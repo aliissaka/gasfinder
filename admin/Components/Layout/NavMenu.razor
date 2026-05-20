@@ -1,4 +1,10 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+@using GasFinder.Admin.Services
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+
+<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">GasFinder.Admin</a>
     </div>
@@ -10,21 +16,58 @@
     <nav class="nav flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Dashboard
             </NavLink>
         </div>
 
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
+            <NavLink class="nav-link" href="retailers">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Retailers
             </NavLink>
         </div>
 
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
+            <NavLink class="nav-link" href="brands">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Brands
             </NavLink>
         </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="stock">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Stock
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="users">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Users
+            </NavLink>
+        </div>
+
+        @if (Tokens.IsAuthenticated)
+        {
+            <div class="nav-item px-3 mt-3">
+                <button class="btn btn-sm btn-outline-light w-100" @onclick="SignOut">
+                    Sign out
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="login">
+                    <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Sign in
+                </NavLink>
+            </div>
+        }
     </nav>
 </div>
 
+@code {
+    private async Task SignOut()
+    {
+        await Tokens.ClearStorageAsync(Storage);
+        Tokens.Clear();
+        Nav.NavigateTo("/login");
+    }
+}

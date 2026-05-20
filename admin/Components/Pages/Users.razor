@@ -1,0 +1,380 @@
+@page "/users"
+@using GasFinder.Admin.Services
+@using GasFinder.Shared.Contracts.Admin
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminApi Api
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IDisposable
+
+<PageTitle>Users</PageTitle>
+
+<h1 class="mb-3">Users</h1>
+
+<div class="row g-2 mb-3 align-items-center">
+    <div class="col-auto">
+        <div class="btn-group" role="group" aria-label="Role filter">
+            @foreach (var tab in RoleTabs)
+            {
+                var v = tab.Value;
+                <button type="button"
+                        class="btn @(RoleFilter == tab.Value ? "btn-primary" : "btn-outline-primary")"
+                        @onclick="() => SetRole(v)">
+                    @tab.Label
+                </button>
+            }
+        </div>
+    </div>
+    <div class="col-md-4">
+        <input class="form-control" placeholder="Search phone or name" @bind="SearchTerm" @bind:event="oninput" @onkeyup="@(async () => await OnSearchKey())" />
+    </div>
+    <div class="col-auto">
+        <button class="btn btn-outline-secondary" @onclick="@(async () => await LoadAsync())" disabled="@_loading">
+            @(_loading ? "Loading..." : "Refresh")
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+@if (_loading && Rows is null)
+{
+    <p>Loading users...</p>
+}
+else if (Rows is null || Rows.Count == 0)
+{
+    <p class="text-muted">No users match the current filter.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Phone</th>
+                    <th>Display name</th>
+                    <th>Role</th>
+                    <th>Linked retailer</th>
+                    <th>Created</th>
+                    <th class="text-end" style="width: 240px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Rows)
+                {
+                    <tr>
+                        <td><code>@u.Phone</code></td>
+                        <td>@(u.DisplayName ?? "—")</td>
+                        <td><span class="badge @RoleClass(u.Role)">@u.Role</span></td>
+                        <td>
+                            @if (u.RetailerId is not null)
+                            {
+                                <a href="/retailers">@u.RetailerShopName</a>
+                                <span class="badge ms-1 @RetailerStatusClass(u.RetailerStatus)">@u.RetailerStatus</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                        </td>
+                        <td>@u.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary me-1"
+                                    @onclick="() => OpenResetPin(u)">
+                                Reset PIN
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary"
+                                    @onclick="() => OpenChangeRole(u)">
+                                Change role
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_resetUser is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.4);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Reset PIN for @_resetUser.Phone</h5>
+                    <button type="button" class="btn-close" @onclick="CloseReset"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(_modalError))
+                    {
+                        <div class="alert alert-danger py-2">@_modalError</div>
+                    }
+                    <div class="mb-2">
+                        <label class="form-label">New PIN (4-8 digits)</label>
+                        <input class="form-control" @bind="_newPin" type="text" inputmode="numeric" maxlength="8" />
+                    </div>
+                    <p class="text-muted small mb-0">
+                        Communicate the new PIN out-of-band (call/SMS). The user can sign in with it immediately.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseReset" disabled="@_saving">Cancel</button>
+                    <button class="btn btn-warning" @onclick="ConfirmReset" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Reset PIN")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_roleUser is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.4);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Change role for @_roleUser.Phone</h5>
+                    <button type="button" class="btn-close" @onclick="CloseRole"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(_modalError))
+                    {
+                        <div class="alert alert-danger py-2">@_modalError</div>
+                    }
+                    <div class="mb-2">
+                        <label class="form-label">Current: <strong>@_roleUser.Role</strong></label>
+                    </div>
+                    <select class="form-select" @bind="_newRole">
+                        <option value="Consumer">Consumer</option>
+                        <option value="Retailer">Retailer</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                    @if (_roleUser.Role == "Admin")
+                    {
+                        <p class="text-warning small mt-2 mb-0">
+                            Demoting the last admin will be refused by the API.
+                        </p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseRole" disabled="@_saving">Cancel</button>
+                    <button class="btn btn-primary" @onclick="ConfirmRole" disabled="@_saving">
+                        @(_saving ? "Saving..." : "Change role")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private record RoleTab(string Label, string Value);
+
+    private static readonly RoleTab[] RoleTabs =
+    {
+        new("All", ""),
+        new("Consumers", "Consumer"),
+        new("Retailers", "Retailer"),
+        new("Admins", "Admin")
+    };
+
+    private string RoleFilter { get; set; } = "";
+    private string SearchTerm { get; set; } = "";
+
+    private List<UserListItemDto>? Rows;
+    private string? Error;
+    private bool _loading;
+    private bool _hydrated;
+
+    private UserListItemDto? _resetUser;
+    private UserListItemDto? _roleUser;
+    private string _newPin = "";
+    private string _newRole = "Consumer";
+    private string? _modalError;
+    private bool _saving;
+    private CancellationTokenSource? _searchCts;
+
+    protected override void OnInitialized()
+    {
+        Tokens.Changed += OnTokensChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hydrated) return;
+        _hydrated = true;
+
+        await Tokens.HydrateFromAsync(Storage);
+        if (!Tokens.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Tokens.Changed -= OnTokensChanged;
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+
+    private void OnTokensChanged()
+    {
+        if (!Tokens.IsAuthenticated)
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task SetRole(string v)
+    {
+        RoleFilter = v;
+        await LoadAsync();
+    }
+
+    private async Task OnSearchKey()
+    {
+        _searchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        try
+        {
+            await Task.Delay(250, cts.Token);
+            if (!cts.IsCancellationRequested)
+                await LoadAsync(cts.Token);
+        }
+        catch (TaskCanceledException) { /* superseded */ }
+    }
+
+    private async Task LoadAsync(CancellationToken ct = default)
+    {
+        Error = null;
+        _loading = true;
+        try
+        {
+            Rows = (await Api.ListUsersAsync(string.IsNullOrEmpty(RoleFilter) ? null : RoleFilter,
+                                              string.IsNullOrEmpty(SearchTerm) ? null : SearchTerm,
+                                              ct)).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Failed to load: {ex.Message}";
+        }
+        catch (TaskCanceledException) { /* superseded */ }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenResetPin(UserListItemDto u)
+    {
+        _resetUser = u;
+        _newPin = "";
+        _modalError = null;
+    }
+
+    private void CloseReset()
+    {
+        _resetUser = null;
+        _newPin = "";
+        _modalError = null;
+    }
+
+    private async Task ConfirmReset()
+    {
+        if (_resetUser is null) return;
+        if (string.IsNullOrWhiteSpace(_newPin) || _newPin.Length is < 4 or > 8 || !_newPin.All(char.IsDigit))
+        {
+            _modalError = "PIN must be 4-8 digits.";
+            return;
+        }
+        _saving = true;
+        _modalError = null;
+        try
+        {
+            var result = await Api.ResetUserPinAsync(_resetUser.Id, _newPin);
+            if (!result.Success)
+            {
+                _modalError = result.Error;
+                return;
+            }
+            CloseReset();
+        }
+        catch (HttpRequestException ex)
+        {
+            _modalError = $"Network error: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OpenChangeRole(UserListItemDto u)
+    {
+        _roleUser = u;
+        _newRole = u.Role;
+        _modalError = null;
+    }
+
+    private void CloseRole()
+    {
+        _roleUser = null;
+        _modalError = null;
+    }
+
+    private async Task ConfirmRole()
+    {
+        if (_roleUser is null) return;
+        if (string.Equals(_newRole, _roleUser.Role, StringComparison.OrdinalIgnoreCase))
+        {
+            CloseRole();
+            return;
+        }
+        _saving = true;
+        _modalError = null;
+        try
+        {
+            var result = await Api.ChangeUserRoleAsync(_roleUser.Id, _newRole);
+            if (!result.Success)
+            {
+                _modalError = result.Error;
+                return;
+            }
+            CloseRole();
+            await LoadAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            _modalError = $"Network error: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private static string RoleClass(string role) => role.ToLowerInvariant() switch
+    {
+        "admin" => "bg-dark",
+        "retailer" => "bg-primary",
+        "consumer" => "bg-info text-dark",
+        _ => "bg-light text-dark"
+    };
+
+    private static string RetailerStatusClass(string? status) => (status ?? "").ToLowerInvariant() switch
+    {
+        "approved" => "bg-success",
+        "pending" => "bg-warning text-dark",
+        "suspended" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}

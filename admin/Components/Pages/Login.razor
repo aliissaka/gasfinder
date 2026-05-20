@@ -1,0 +1,91 @@
+@page "/login"
+@using GasFinder.Admin.Services
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminApi Api
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+@inject ILogger<Login> Log
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+<PageTitle>Sign in — GasFinder Admin</PageTitle>
+
+<div class="d-flex justify-content-center align-items-center" style="min-height: 70vh;">
+    <div class="card shadow-sm" style="width: 360px;">
+        <div class="card-body">
+            <h3 class="card-title mb-3">Admin sign in</h3>
+
+            <EditForm Model="this" OnValidSubmit="Submit">
+                <div class="mb-3">
+                    <label for="phone" class="form-label">Phone</label>
+                    <InputText id="phone" class="form-control" @bind-Value="Phone" placeholder="+225..." autocomplete="tel" />
+                </div>
+                <div class="mb-3">
+                    <label for="pin" class="form-label">PIN</label>
+                    <InputText id="pin" type="password" class="form-control" @bind-Value="Pin" autocomplete="current-password" />
+                </div>
+
+                @if (!string.IsNullOrEmpty(Error))
+                {
+                    <div class="alert alert-danger py-2">@Error</div>
+                }
+
+                <button type="submit" class="btn btn-primary w-100" disabled="@_busy">
+                    @(_busy ? "Signing in..." : "Sign in")
+                </button>
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string Phone { get; set; } = string.Empty;
+    private string Pin { get; set; } = string.Empty;
+    private string? Error;
+    private bool _busy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Tokens.HydrateFromAsync(Storage);
+        if (Tokens.IsAuthenticated)
+            Nav.NavigateTo("/");
+    }
+
+    private async Task Submit()
+    {
+        Error = null;
+        _busy = true;
+        try
+        {
+            var result = await Api.LoginAsync(Phone.Trim(), Pin.Trim());
+            switch (result.Outcome)
+            {
+                case LoginOutcome.RateLimited:
+                    Error = "Too many attempts. Wait a minute and try again.";
+                    return;
+                case LoginOutcome.NetworkError:
+                    Error = "Cannot reach the API. Is the backend running on http://localhost:5129?";
+                    return;
+                case LoginOutcome.InvalidCredentials:
+                    Error = "Invalid phone or PIN.";
+                    return;
+                case LoginOutcome.Success:
+                    var auth = result.Auth!;
+                    if (!string.Equals(auth.Role, "Admin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Error = "This account is not an admin.";
+                        return;
+                    }
+                    Tokens.Set(auth.AccessToken, auth.UserId, auth.ExpiresAt);
+                    await Tokens.PersistToAsync(Storage);
+                    Nav.NavigateTo("/");
+                    return;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

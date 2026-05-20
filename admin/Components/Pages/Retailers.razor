@@ -1,0 +1,357 @@
+@page "/retailers"
+@using GasFinder.Admin.Services
+@using GasFinder.Shared.Contracts.Admin
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminApi Api
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IDisposable
+
+<PageTitle>Retailer approval queue</PageTitle>
+
+<h1 class="mb-3">Retailers</h1>
+
+<div class="btn-group mb-3" role="group" aria-label="Status filter">
+    @foreach (var tab in Tabs)
+    {
+        var tabValue = tab.Value;
+        <button type="button"
+                class="btn @(Filter == tab.Value ? "btn-primary" : "btn-outline-primary")"
+                @onclick="() => SetFilter(tabValue)">
+            @tab.Label
+        </button>
+    }
+    <button type="button" class="btn btn-outline-secondary" @onclick="LoadAsync" disabled="@_loading">
+        @(_loading ? "Loading..." : "Refresh")
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+@if (_loading && Rows is null)
+{
+    <p>Loading retailers...</p>
+}
+else if (Rows is null || Rows.Count == 0)
+{
+    <p class="text-muted">No retailers in this view.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Shop</th>
+                    <th>Owner</th>
+                    <th>Phone</th>
+                    <th>Address</th>
+                    <th>Location</th>
+                    <th>Submitted</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Rows)
+                {
+                    var expanded = _expandedId == r.Id;
+                    <tr>
+                        <td>
+                            <button class="btn btn-sm btn-link p-0" @onclick="() => ToggleHistory(r.Id)" title="Show history">
+                                @(expanded ? "▾" : "▸")
+                            </button>
+                        </td>
+                        <td><strong>@r.ShopName</strong></td>
+                        <td>@(r.OwnerName ?? "—")</td>
+                        <td>@r.Phone</td>
+                        <td>@(r.Address ?? "—")</td>
+                        <td>
+                            <a href="@MapUrl(r)" target="_blank" rel="noopener">
+                                @r.Latitude.ToString("F4"), @r.Longitude.ToString("F4")
+                            </a>
+                        </td>
+                        <td>@r.CreatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td><span class="badge @StatusClass(r.Status)">@r.Status</span></td>
+                        <td class="text-end">
+                            @if (!string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <button class="btn btn-sm btn-success me-1"
+                                        @onclick='() => UpdateStatus(r.Id, "Approved", null)'
+                                        disabled="@(_pendingId == r.Id)">
+                                    Approve
+                                </button>
+                            }
+                            @if (!string.Equals(r.Status, "Suspended", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick='() => OpenReason(r.Id, "Suspended")'
+                                        disabled="@(_pendingId == r.Id)">
+                                    @(r.Status == "Pending" ? "Reject" : "Suspend")
+                                </button>
+                            }
+                            @if (!string.Equals(r.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <button class="btn btn-sm btn-outline-secondary ms-1"
+                                        @onclick='() => UpdateStatus(r.Id, "Pending", null)'
+                                        disabled="@(_pendingId == r.Id)">
+                                    Move to Pending
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                    @if (expanded)
+                    {
+                        <tr>
+                            <td colspan="9" class="bg-light">
+                                <strong class="d-block mb-2">History</strong>
+                                @if (_historyLoading)
+                                {
+                                    <p class="text-muted mb-0">Loading history...</p>
+                                }
+                                else if (_history is null || _history.Count == 0)
+                                {
+                                    <p class="text-muted mb-0">No status changes recorded yet.</p>
+                                }
+                                else
+                                {
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>When</th>
+                                                <th>Change</th>
+                                                <th>By</th>
+                                                <th>Reason</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var h in _history)
+                                            {
+                                                <tr>
+                                                    <td>@h.ChangedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                                                    <td>
+                                                        <span class="badge @StatusClass(h.FromStatus)">@h.FromStatus</span>
+                                                        →
+                                                        <span class="badge @StatusClass(h.ToStatus)">@h.ToStatus</span>
+                                                    </td>
+                                                    <td>@(h.ChangedByDisplayName ?? h.ChangedByUserId.ToString()[..8])</td>
+                                                    <td>@(h.Reason ?? "—")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_reasonRetailerId is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.4);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_reasonTargetStatus == "Suspended" ? "Suspend / reject retailer" : "Change status")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseReason"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Reason (optional)</label>
+                    <textarea class="form-control" rows="3" @bind="_reasonText"
+                              placeholder="e.g. unverified address, complaint, duplicate listing"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseReason">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmReason">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private record TabDef(string Label, string Value);
+
+    private static readonly TabDef[] Tabs =
+    {
+        new("Pending", "Pending"),
+        new("Approved", "Approved"),
+        new("Suspended", "Suspended"),
+        new("All", "")
+    };
+
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? StatusQuery { get; set; }
+
+    private string Filter { get; set; } = "Pending";
+    private List<PendingRetailerDto>? Rows;
+    private string? Error;
+    private bool _loading;
+    private Guid? _pendingId;
+
+    private Guid? _expandedId;
+    private List<RetailerStatusChangeDto>? _history;
+    private bool _historyLoading;
+
+    private Guid? _reasonRetailerId;
+    private string _reasonTargetStatus = "";
+    private string _reasonText = "";
+
+    private bool _hydrated;
+
+    protected override void OnInitialized()
+    {
+        Tokens.Changed += OnTokensChanged;
+        if (StatusQuery is not null && Tabs.Any(t => t.Value.Equals(StatusQuery, StringComparison.OrdinalIgnoreCase)))
+        {
+            Filter = Tabs.First(t => t.Value.Equals(StatusQuery, StringComparison.OrdinalIgnoreCase)).Value;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hydrated) return;
+        _hydrated = true;
+
+        await Tokens.HydrateFromAsync(Storage);
+        if (!Tokens.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Tokens.Changed -= OnTokensChanged;
+
+    private void OnTokensChanged()
+    {
+        if (!Tokens.IsAuthenticated)
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task SetFilter(string v)
+    {
+        Filter = v;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Error = null;
+        _loading = true;
+        try
+        {
+            Rows = (await Api.ListRetailersAsync(Filter)).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Failed to load: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task UpdateStatus(Guid id, string status, string? reason)
+    {
+        Error = null;
+        _pendingId = id;
+        try
+        {
+            var ok = await Api.SetRetailerStatusAsync(id, status, reason);
+            if (!ok)
+            {
+                Error = $"Failed to set status to {status}.";
+                return;
+            }
+            await LoadAsync();
+            if (_expandedId == id)
+                await LoadHistoryAsync(id);
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Network error: {ex.Message}";
+        }
+        finally
+        {
+            _pendingId = null;
+        }
+    }
+
+    private async Task ToggleHistory(Guid id)
+    {
+        if (_expandedId == id)
+        {
+            _expandedId = null;
+            _history = null;
+            return;
+        }
+        _expandedId = id;
+        await LoadHistoryAsync(id);
+    }
+
+    private async Task LoadHistoryAsync(Guid id)
+    {
+        _historyLoading = true;
+        _history = null;
+        try
+        {
+            _history = (await Api.GetRetailerHistoryAsync(id)).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Failed to load history: {ex.Message}";
+        }
+        finally
+        {
+            _historyLoading = false;
+        }
+    }
+
+    private void OpenReason(Guid id, string targetStatus)
+    {
+        _reasonRetailerId = id;
+        _reasonTargetStatus = targetStatus;
+        _reasonText = "";
+    }
+
+    private void CloseReason()
+    {
+        _reasonRetailerId = null;
+        _reasonText = "";
+    }
+
+    private async Task ConfirmReason()
+    {
+        if (_reasonRetailerId is null) return;
+        var id = _reasonRetailerId.Value;
+        var status = _reasonTargetStatus;
+        var reason = _reasonText;
+        CloseReason();
+        await UpdateStatus(id, status, string.IsNullOrWhiteSpace(reason) ? null : reason);
+    }
+
+    private static string StatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "approved" => "bg-success",
+        "pending" => "bg-warning text-dark",
+        "suspended" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+
+    private static string MapUrl(PendingRetailerDto r)
+        => $"https://www.openstreetmap.org/?mlat={r.Latitude}&mlon={r.Longitude}#map=17/{r.Latitude}/{r.Longitude}";
+}

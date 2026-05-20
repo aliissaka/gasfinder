@@ -1,0 +1,243 @@
+@page "/stock"
+@using GasFinder.Admin.Services
+@using GasFinder.Shared.Contracts.Admin
+@using GasFinder.Shared.Contracts.Brands
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminApi Api
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IDisposable
+
+<PageTitle>Stock oversight</PageTitle>
+
+<h1 class="mb-3">Stock</h1>
+
+<div class="row g-2 mb-3 align-items-center">
+    <div class="col-md-3">
+        <label class="form-label small text-muted mb-0">Status</label>
+        <select class="form-select" @bind="StatusFilter" @bind:after="LoadAsync">
+            <option value="">All</option>
+            <option value="Out">Out</option>
+            <option value="Low">Low</option>
+            <option value="Available">Available</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label small text-muted mb-0">Brand</label>
+        <select class="form-select" @bind="BrandFilter" @bind:after="LoadAsync">
+            <option value="">All</option>
+            @if (Brands is not null)
+            {
+                @foreach (var b in Brands)
+                {
+                    <option value="@b.Id">@b.Name</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label small text-muted mb-0">Retailer status</label>
+        <select class="form-select" @bind="RetailerStatusFilter" @bind:after="LoadAsync">
+            <option value="">All</option>
+            <option value="Approved">Approved only</option>
+            <option value="Pending">Pending</option>
+            <option value="Suspended">Suspended</option>
+        </select>
+    </div>
+    <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-outline-secondary w-100" @onclick="@(async () => await LoadAsync())" disabled="@_loading">
+            @(_loading ? "Loading..." : "Refresh")
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+<h2 class="h5 text-muted mb-2">Current stock</h2>
+@if (_loading && Rows is null)
+{
+    <p>Loading stock...</p>
+}
+else if (Rows is null || Rows.Count == 0)
+{
+    <p class="text-muted">No stock items match the filter.</p>
+}
+else
+{
+    <div class="table-responsive mb-4">
+        <table class="table table-sm table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Brand</th>
+                    <th>Retailer</th>
+                    <th>Quantity</th>
+                    <th>Last updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Rows)
+                {
+                    <tr>
+                        <td><span class="badge @StockStatusClass(r.Status)">@r.Status</span></td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(r.BrandLogoUrl))
+                            {
+                                <img src="@r.BrandLogoUrl" alt="@r.BrandName" style="height: 20px; margin-right: 4px; object-fit: contain;" />
+                            }
+                            @r.BrandName
+                        </td>
+                        <td>
+                            @r.RetailerShopName
+                            <span class="badge ms-1 @RetailerStatusClass(r.RetailerStatus)">@r.RetailerStatus</span>
+                        </td>
+                        <td>@(r.Quantity?.ToString() ?? "—")</td>
+                        <td>@r.LastUpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<h2 class="h5 text-muted mb-2">Recent stock updates</h2>
+@if (Recent is null)
+{
+    <p class="text-muted">—</p>
+}
+else if (Recent.Count == 0)
+{
+    <p class="text-muted">No stock updates recorded yet.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Received</th>
+                    <th>Reported</th>
+                    <th>Retailer</th>
+                    <th>Brand</th>
+                    <th>Status</th>
+                    <th>Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Recent)
+                {
+                    <tr>
+                        <td>@u.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="text-muted small">@u.ReportedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@u.RetailerShopName</td>
+                        <td>@u.BrandName</td>
+                        <td><span class="badge @StockStatusClass(u.Status)">@u.Status</span></td>
+                        <td>@(u.Quantity?.ToString() ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")]
+    public string? StatusQuery { get; set; }
+
+    private string StatusFilter { get; set; } = "";
+    private string BrandFilter { get; set; } = "";
+    private string RetailerStatusFilter { get; set; } = "";
+
+    private List<AdminStockItemDto>? Rows;
+    private List<AdminStockUpdateDto>? Recent;
+    private List<BrandDto>? Brands;
+
+    private string? Error;
+    private bool _loading;
+    private bool _hydrated;
+
+    protected override void OnInitialized()
+    {
+        Tokens.Changed += OnTokensChanged;
+        if (!string.IsNullOrEmpty(StatusQuery)
+            && (StatusQuery is "Out" or "Low" or "Available"))
+        {
+            StatusFilter = StatusQuery;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hydrated) return;
+        _hydrated = true;
+
+        await Tokens.HydrateFromAsync(Storage);
+        if (!Tokens.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        try
+        {
+            Brands = (await Api.ListBrandsAsync()).ToList();
+        }
+        catch (HttpRequestException) { /* surface as Error on next load */ }
+
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Tokens.Changed -= OnTokensChanged;
+
+    private void OnTokensChanged()
+    {
+        if (!Tokens.IsAuthenticated)
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task LoadAsync()
+    {
+        Error = null;
+        _loading = true;
+        try
+        {
+            Guid? brand = Guid.TryParse(BrandFilter, out var g) ? g : null;
+            var stockTask = Api.ListStockAsync(brand,
+                string.IsNullOrEmpty(StatusFilter) ? null : StatusFilter,
+                string.IsNullOrEmpty(RetailerStatusFilter) ? null : RetailerStatusFilter);
+            var recentTask = Api.ListRecentStockUpdatesAsync(50);
+            Rows = (await stockTask).ToList();
+            Recent = (await recentTask).ToList();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Failed to load: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string StockStatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "available" => "bg-success",
+        "low" => "bg-warning text-dark",
+        "out" => "bg-danger",
+        _ => "bg-light text-dark"
+    };
+
+    private static string RetailerStatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "approved" => "bg-success",
+        "pending" => "bg-warning text-dark",
+        "suspended" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}

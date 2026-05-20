@@ -1,0 +1,152 @@
+@page "/"
+@using GasFinder.Admin.Services
+@using GasFinder.Shared.Contracts.Admin
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject AdminApi Api
+@inject AdminTokenStore Tokens
+@inject ProtectedSessionStorage Storage
+@inject NavigationManager Nav
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IDisposable
+
+<PageTitle>Dashboard — GasFinder Admin</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Dashboard</h1>
+    <button class="btn btn-outline-secondary" @onclick="LoadAsync" disabled="@_loading">
+        @(_loading ? "Loading..." : "Refresh")
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+@if (_loading && Summary is null)
+{
+    <p>Loading dashboard...</p>
+}
+else if (Summary is not null)
+{
+    <h2 class="h5 text-muted mb-2">Retailers</h2>
+    <div class="row g-3 mb-4">
+        <Tile Label="Pending review" Count="@Summary.PendingRetailers" Variant="warning" Href="/retailers?status=Pending" Highlight="@(Summary.PendingRetailers > 0)" />
+        <Tile Label="Approved" Count="@Summary.ApprovedRetailers" Variant="success" Href="/retailers?status=Approved" />
+        <Tile Label="Suspended" Count="@Summary.SuspendedRetailers" Variant="secondary" Href="/retailers?status=Suspended" />
+    </div>
+
+    <h2 class="h5 text-muted mb-2">Catalog</h2>
+    <div class="row g-3 mb-4">
+        <Tile Label="Brands" Count="@Summary.TotalBrands" Variant="primary" Href="/brands" />
+        <Tile Label="Stock items" Count="@Summary.TotalStockItems" Variant="info" Href="/stock" />
+        <Tile Label="Out of stock" Count="@Summary.OutOfStockItems" Variant="danger" Href="/stock?status=Out" Highlight="@(Summary.OutOfStockItems > 0)" />
+        <Tile Label="Low stock" Count="@Summary.LowStockItems" Variant="warning" Href="/stock?status=Low" />
+    </div>
+
+    <h2 class="h5 text-muted mb-2">Users</h2>
+    <div class="row g-3 mb-4">
+        <Tile Label="Consumers" Count="@Summary.ConsumerCount" Variant="primary" />
+        <Tile Label="Retailer accounts" Count="@Summary.RetailerUserCount" Variant="primary" />
+        <Tile Label="Admins" Count="@Summary.AdminCount" Variant="dark" />
+    </div>
+
+    <h2 class="h5 text-muted mb-2">Recent retailer status changes</h2>
+    @if (Summary.RecentActivity.Count == 0)
+    {
+        <p class="text-muted">No status changes recorded yet.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Retailer</th>
+                        <th>Change</th>
+                        <th>By</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var h in Summary.RecentActivity)
+                    {
+                        <tr>
+                            <td>@h.ChangedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td><a href="/retailers">@h.RetailerShopName</a></td>
+                            <td>
+                                <span class="badge @StatusClass(h.FromStatus)">@h.FromStatus</span>
+                                →
+                                <span class="badge @StatusClass(h.ToStatus)">@h.ToStatus</span>
+                            </td>
+                            <td>@(h.ChangedByDisplayName ?? "—")</td>
+                            <td>@(h.Reason ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private DashboardSummaryDto? Summary;
+    private string? Error;
+    private bool _loading;
+    private bool _hydrated;
+
+    protected override void OnInitialized()
+    {
+        Tokens.Changed += OnTokensChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _hydrated) return;
+        _hydrated = true;
+
+        await Tokens.HydrateFromAsync(Storage);
+        if (!Tokens.IsAuthenticated)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Tokens.Changed -= OnTokensChanged;
+
+    private void OnTokensChanged()
+    {
+        if (!Tokens.IsAuthenticated)
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task LoadAsync()
+    {
+        Error = null;
+        _loading = true;
+        try
+        {
+            Summary = await Api.GetDashboardAsync();
+        }
+        catch (HttpRequestException ex)
+        {
+            Error = $"Failed to load: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string StatusClass(string status) => status.ToLowerInvariant() switch
+    {
+        "approved" => "bg-success",
+        "pending" => "bg-warning text-dark",
+        "suspended" => "bg-secondary",
+        _ => "bg-light text-dark"
+    };
+}
