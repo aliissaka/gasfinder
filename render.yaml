@@ -19,3 +19,28 @@ services:
         sync: false
       - key: Jwt__SigningKey
         sync: false
+      # Optional bootstrap: set these on the first deploy to seed an admin,
+      # then unset and redeploy. The seeder is a no-op if a user with this
+      # phone already exists.
+      - key: DevSeed__AdminPhone
+        sync: false
+      - key: DevSeed__AdminPin
+        sync: false
+
+  - type: web
+    name: gasfinder-admin
+    runtime: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./admin/Dockerfile
+    dockerContext: .
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      # Public URL of the gasfinder-api service (e.g. https://gasfinder-api.onrender.com).
+      - key: Api__BaseUrl
+        sync: false

@@ -70,8 +70,12 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
-    await SeedDevAdminAsync(app);
 }
+
+// Seeder is config-gated (no-op unless DevSeed:AdminPhone+Pin are set) and
+// idempotent (no-op if the user already exists), so it is safe to run in any
+// environment. Used to bootstrap the first admin on a fresh prod deployment.
+await SeedDevAdminAsync(app);
 
 app.UseResponseCompression();
 app.UseRateLimiter();
