@@ -85,6 +85,14 @@ if (app.Environment.IsDevelopment())
     app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 }
 
+// Apply any pending EF Core migrations automatically on startup. Safe to run
+// every time: EF Core no-ops if the database is already up to date.
+await using (var migrationScope = app.Services.CreateAsyncScope())
+{
+    var db = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 // Seeder is config-gated (no-op unless DevSeed:AdminPhone+Pin are set) and
 // idempotent (no-op if the user already exists), so it is safe to run in any
 // environment. Used to bootstrap the first admin on a fresh prod deployment.
