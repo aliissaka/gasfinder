@@ -1,4 +1,4 @@
-using GasFinder.Domain.Enums;
+﻿using GasFinder.Domain.Enums;
 
 namespace GasFinder.Domain.Entities;
 
@@ -10,6 +10,8 @@ public class StockUpdate
 
     public Guid BrandId { get; set; }
     public Brand Brand { get; set; } = default!;
+
+    public BottleSize BottleSize { get; set; }
 
     public StockStatus Status { get; set; }
     public int? Quantity { get; set; }

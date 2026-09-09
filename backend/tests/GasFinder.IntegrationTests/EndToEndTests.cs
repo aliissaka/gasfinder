@@ -73,8 +73,8 @@ public class EndToEndTests(PostgresFixture pg)
         var now = DateTimeOffset.UtcNow;
         var batch = new StockUpdateBatchRequest(new[]
         {
-            new StockUpdateRequest(Guid.NewGuid(), shellId, "Available", 12, now),
-            new StockUpdateRequest(Guid.NewGuid(), totalId, "Out", 0, now)
+            new StockUpdateRequest(Guid.NewGuid(), shellId, "Kg12", "Available", 12, now),
+            new StockUpdateRequest(Guid.NewGuid(), totalId, "Kg6", "Out", 0, now)
         });
         var post = await retailerClient.PostAsJsonAsync("/api/stock/updates", batch);
         post.EnsureSuccessStatusCode();

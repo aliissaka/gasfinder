@@ -1,4 +1,4 @@
-using GasFinder.Api.Auth;
+﻿using GasFinder.Api.Auth;
 using GasFinder.Domain.Entities;
 using GasFinder.Domain.Enums;
 using GasFinder.Infrastructure.Persistence;
@@ -27,14 +27,14 @@ public class StockController(AppDbContext db, ILogger<StockController> log) : Co
             .Where(s => s.RetailerId == retailerId)
             .Join(db.Brands, s => s.BrandId, b => b.Id, (s, b) => new
             {
-                b.Id, b.Name, b.LogoUrl, s.Status, s.Quantity, s.LastUpdatedAt
+                b.Id, b.Name, b.LogoUrl, s.BottleSize, s.Status, s.Quantity, s.LastUpdatedAt
             })
             .ToListAsync(ct);
 
         var stock = rows
-            .OrderBy(s => s.Name)
+            .OrderBy(s => s.Name).ThenBy(s => s.BottleSize)
             .Select(s => new StockItemDto(
-                s.Id, s.Name, s.LogoUrl, s.Status.ToString(), s.Quantity, s.LastUpdatedAt))
+                s.Id, s.Name, s.LogoUrl, s.BottleSize.ToString(), s.Status.ToString(), s.Quantity, s.LastUpdatedAt))
             .ToList();
 
         return Ok(stock);
@@ -82,6 +82,13 @@ public class StockController(AppDbContext db, ILogger<StockController> log) : Co
                 continue;
             }
 
+            if (!Enum.TryParse<BottleSize>(u.BottleSize, ignoreCase: true, out var bottleSize))
+            {
+                results.Add(new StockUpdateResult(u.ClientOutboxId, StockUpdateOutcomes.Rejected,
+                    $"unknown bottleSize '{u.BottleSize}'"));
+                continue;
+            }
+
             if (!validBrandSet.Contains(u.BrandId))
             {
                 results.Add(new StockUpdateResult(u.ClientOutboxId, StockUpdateOutcomes.Rejected,
@@ -94,6 +101,7 @@ public class StockController(AppDbContext db, ILogger<StockController> log) : Co
                 Id = Guid.NewGuid(),
                 RetailerId = retailerId.Value,
                 BrandId = u.BrandId,
+                BottleSize = bottleSize,
                 Status = status,
                 Quantity = u.Quantity,
                 ReportedAt = u.ReportedAt,
@@ -102,13 +110,14 @@ public class StockController(AppDbContext db, ILogger<StockController> log) : Co
             });
 
             var item = await db.StockItems
-                .FirstOrDefaultAsync(s => s.RetailerId == retailerId && s.BrandId == u.BrandId, ct);
+                .FirstOrDefaultAsync(s => s.RetailerId == retailerId && s.BrandId == u.BrandId && s.BottleSize == bottleSize, ct);
             if (item is null)
             {
                 db.StockItems.Add(new StockItem
                 {
                     RetailerId = retailerId.Value,
                     BrandId = u.BrandId,
+                    BottleSize = bottleSize,
                     Status = status,
                     Quantity = u.Quantity,
                     LastUpdatedAt = u.ReportedAt

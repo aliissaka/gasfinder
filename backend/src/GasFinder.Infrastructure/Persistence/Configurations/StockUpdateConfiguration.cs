@@ -1,4 +1,4 @@
-using GasFinder.Domain.Entities;
+﻿using GasFinder.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -11,6 +11,7 @@ public class StockUpdateConfiguration : IEntityTypeConfiguration<StockUpdate>
         b.ToTable("stock_updates");
         b.HasKey(s => s.Id);
 
+        b.Property(s => s.BottleSize).HasConversion<string>().IsRequired();
         b.Property(s => s.Status).HasConversion<string>().IsRequired();
         b.Property(s => s.ReportedAt).IsRequired();
         b.Property(s => s.ReceivedAt).IsRequired();

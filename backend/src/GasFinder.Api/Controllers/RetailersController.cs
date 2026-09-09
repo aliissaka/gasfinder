@@ -92,14 +92,14 @@ public class RetailersController(AppDbContext db) : ControllerBase
             .Where(s => s.RetailerId == id)
             .Join(db.Brands, s => s.BrandId, b => b.Id, (s, b) => new
             {
-                b.Id, b.Name, b.LogoUrl, s.Status, s.Quantity, s.LastUpdatedAt
+                b.Id, b.Name, b.LogoUrl, s.BottleSize, s.Status, s.Quantity, s.LastUpdatedAt
             })
             .ToListAsync(ct);
 
         var stock = stockRows
-            .OrderBy(s => s.Name)
+            .OrderBy(s => s.Name).ThenBy(s => s.BottleSize)
             .Select(s => new StockItemDto(
-                s.Id, s.Name, s.LogoUrl, s.Status.ToString(), s.Quantity, s.LastUpdatedAt))
+                s.Id, s.Name, s.LogoUrl, s.BottleSize.ToString(), s.Status.ToString(), s.Quantity, s.LastUpdatedAt))
             .ToList();
 
         return Ok(new RetailerDetail(
